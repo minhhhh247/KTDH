@@ -24,8 +24,8 @@ public class PacmanGame extends JPanel implements KeyListener, MouseListener {
     private long lastGhostSpawnTime = 0;
     private long lastScaleTime = 0;
     private final long GHOST_SPAWN_INTERVAL = GameConstants.GHOST_SPAWN_INTERVAL;
-    private final long SCALE_INTERVAL = GameConstants.SCALE_INTERVAL;
     private boolean gameOver = false;
+    private boolean gameWon = false;
 
     // Trạng thái phím
     private boolean upPressed = false;
@@ -64,24 +64,41 @@ public class PacmanGame extends JPanel implements KeyListener, MouseListener {
         spawnGhost();
     }
 
+    // SỬA: Spawn ghost an toàn hơn
     private void spawnGhost() {
         if (ghosts.size() >= GameConstants.MAX_GHOSTS) return;
 
-        int attempts = 0;
-        while (attempts < 50) {
-            double randomX = random.nextDouble() * (gameMap.getScreenWidth() - GameConstants.PLAYER_SQUARE_SIZE);
-            double randomY = random.nextDouble() * (gameMap.getScreenHeight() - GameConstants.PLAYER_SQUARE_SIZE);
+        // Danh sách các vị trí an toàn để spawn ghost
+        List<Point2D> safePositions = new ArrayList<>();
 
-            if (gameMap.isWalkableWithBounds(randomX, randomY,
-                    GameConstants.GHOST_COLLISION_SIZE, GameConstants.GHOST_COLLISION_SIZE)) {
+        // Tìm tất cả vị trí an toàn
+        for (int row = 1; row < gameMap.getRows() - 1; row++) {
+            for (int col = 1; col < gameMap.getCols() - 1; col++) {
+                if (gameMap.isWalkable(row, col)) {
+                    double ghostX = col * GameConstants.GRID_SIZE;
+                    double ghostY = row * GameConstants.GRID_SIZE;
 
-                if (Math.abs(randomX - player.getX()) > GameConstants.GRID_SIZE * 3 ||
-                        Math.abs(randomY - player.getY()) > GameConstants.GRID_SIZE * 3) {
-                    ghosts.add(new Ghost(randomX, randomY));
-                    break;
+                    // Kiểm tra không quá gần player
+                    if (Math.abs(ghostX - player.getX()) > GameConstants.GRID_SIZE * 4 ||
+                            Math.abs(ghostY - player.getY()) > GameConstants.GRID_SIZE * 4) {
+
+                        // Kiểm tra collision box có thể đi được không
+                        double offsetX = (GameConstants.PLAYER_SQUARE_SIZE - GameConstants.GHOST_COLLISION_SIZE) / 2;
+                        double offsetY = (GameConstants.PLAYER_SQUARE_SIZE - GameConstants.GHOST_COLLISION_SIZE) / 2;
+
+                        if (gameMap.isWalkableWithBounds(ghostX + offsetX, ghostY + offsetY,
+                                GameConstants.GHOST_COLLISION_SIZE, GameConstants.GHOST_COLLISION_SIZE)) {
+                            safePositions.add(new Point2D(ghostX, ghostY));
+                        }
+                    }
                 }
             }
-            attempts++;
+        }
+
+        // Spawn ghost tại vị trí ngẫu nhiên từ danh sách an toàn
+        if (!safePositions.isEmpty()) {
+            Point2D spawnPos = safePositions.get(random.nextInt(safePositions.size()));
+            ghosts.add(new Ghost(spawnPos.x, spawnPos.y));
         }
     }
 
@@ -91,12 +108,13 @@ public class PacmanGame extends JPanel implements KeyListener, MouseListener {
         for (int row = 0; row < gameMap.getRows(); row++) {
             for (int col = 0; col < gameMap.getCols(); col++) {
                 int tileType = gameMap.getTile(row, col);
-                if (tileType == 0) { // Chỉ sinh trên ô trống (type 0)
+                if (tileType == 0) { // Chỉ sinh trên ô trống
                     double pelletX = col * GameConstants.GRID_SIZE +
                             (GameConstants.GRID_SIZE - GameConstants.PELLET_SIZE) / 2;
                     double pelletY = row * GameConstants.GRID_SIZE +
                             (GameConstants.GRID_SIZE - GameConstants.PELLET_SIZE) / 2;
 
+                    // Không sinh pellet quá gần player ban đầu
                     if (Math.abs(pelletX - player.getX()) > GameConstants.GRID_SIZE * 2 ||
                             Math.abs(pelletY - player.getY()) > GameConstants.GRID_SIZE * 2) {
                         pellets.add(new Pellet(pelletX, pelletY));
@@ -108,7 +126,7 @@ public class PacmanGame extends JPanel implements KeyListener, MouseListener {
 
     private void startTimer() {
         gameTimer = new Timer(GameConstants.TIMER_DELAY, e -> {
-            if (!gameOver) {
+            if (!gameOver && !gameWon) {
                 updateGame();
             }
             repaint();
@@ -134,8 +152,13 @@ public class PacmanGame extends JPanel implements KeyListener, MouseListener {
         // Kiểm tra ăn vật phẩm
         checkPelletCollisions();
 
+        // Kiểm tra điều kiện thắng
+        if (!gameOver && !gameWon) {
+            checkWinCondition();
+        }
+
         // Kiểm tra sinh quái mới
-        if (!gameOver) {
+        if (!gameOver && !gameWon) {
             checkGhostSpawning();
         }
 
@@ -146,19 +169,54 @@ public class PacmanGame extends JPanel implements KeyListener, MouseListener {
         checkPelletRespawn();
     }
 
+    // THÊM phương thức kiểm tra thắng
+    private void checkWinCondition() {
+        // 1. Kiểm tra tất cả pellet đã ăn hết chưa
+        boolean allPelletsEaten = true;
+        for (Pellet pellet : pellets) {
+            if (!pellet.isEaten()) {
+                allPelletsEaten = false;
+                break;
+            }
+        }
+
+        if (!allPelletsEaten) return;
+
+        // 2. Kiểm tra người chơi có đang ở ô 3 với kích thước < 24 không
+        ScalableMapElement elementAtPlayer = gameMap.getScalableElementAtPosition(
+                player.getX(), player.getY());
+
+        if (elementAtPlayer != null &&
+                elementAtPlayer.getType() == 3 &&
+                elementAtPlayer.getCurrentSize() < GameConstants.GRID_SIZE) {
+
+            gameWon = true;
+
+            System.out.println("Chiến thắng! Điểm của bạn: " + score);
+
+            SwingUtilities.invokeLater(() -> {
+                JOptionPane.showMessageDialog(this,
+                        "Chúc mừng! Bạn đã thắng!\nĐiểm của bạn: " + score,
+                        "Chiến thắng!",
+                        JOptionPane.INFORMATION_MESSAGE);
+            });
+        }
+    }
+
     private void checkScalingTrigger() {
         long currentTime = System.currentTimeMillis();
-        if (currentTime - lastScaleTime >= SCALE_INTERVAL) {
+        if (currentTime - lastScaleTime >= GameConstants.SCALE_INTERVAL) {
             gameMap.triggerScaling();
             lastScaleTime = currentTime;
         }
     }
 
+    // SỬA: Kiểm tra va chạm với ghost
     private void checkGhostCollisions() {
         if (gameOver) return;
 
         for (Ghost ghost : ghosts) {
-            if (player.checkCollisionWithGhost(ghost)) {
+            if (ghost.checkCollisionWithPlayer(player)) {
                 player.stopMoving();
                 gameOver = true;
 
@@ -193,6 +251,7 @@ public class PacmanGame extends JPanel implements KeyListener, MouseListener {
     }
 
     private void checkPelletRespawn() {
+        // Kiểm tra xem tất cả vật phẩm đã bị ăn hết chưa
         boolean allPelletsEaten = true;
         for (Pellet pellet : pellets) {
             if (!pellet.isEaten()) {
@@ -201,6 +260,7 @@ public class PacmanGame extends JPanel implements KeyListener, MouseListener {
             }
         }
 
+        // Nếu tất cả vật phẩm đã hết, sinh lại
         if (allPelletsEaten) {
             generatePellets();
         }
@@ -245,16 +305,16 @@ public class PacmanGame extends JPanel implements KeyListener, MouseListener {
             GameRenderer.drawGhost(g2d, ghost);
         }
 
-        // Vẽ điểm số
+        // Vẽ điểm số (góc trên bên phải)
         GameRenderer.drawScore(g2d, score, getWidth());
 
-        // Vẽ tọa độ nhân vật
+        // Vẽ tọa độ nhân vật (góc trên bên trái)
         GameRenderer.drawPlayerCoordinates(g2d, player);
     }
 
     @Override
     public void mouseClicked(MouseEvent e) {
-        if (!gameOver) {
+        if (!gameOver && !gameWon) {
             double targetX = e.getX() - player.getCollisionWidth() / 2;
             double targetY = e.getY() - player.getCollisionHeight() / 2;
             player.moveToPoint(targetX, targetY, gameMap);
@@ -263,7 +323,7 @@ public class PacmanGame extends JPanel implements KeyListener, MouseListener {
 
     @Override
     public void keyPressed(KeyEvent e) {
-        if (gameOver) return;
+        if (gameOver || gameWon) return;
 
         int keyCode = e.getKeyCode();
 
@@ -336,7 +396,7 @@ public class PacmanGame extends JPanel implements KeyListener, MouseListener {
         SwingUtilities.invokeLater(() -> {
             PacmanGame gamePanel = new PacmanGame();
 
-            JFrame gameFrame = new JFrame("Pacman Game - With Scalable Elements");
+            JFrame gameFrame = new JFrame("Pacman Game - Complete with Win Condition");
             gameFrame.add(gamePanel);
             gameFrame.pack();
             gameFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);

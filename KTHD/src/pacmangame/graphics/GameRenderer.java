@@ -16,8 +16,8 @@ public class GameRenderer {
                 switch (tileType) {
                     case 0: tileColor = GameConstants.PATH_COLOR; break;
                     case 1: tileColor = GameConstants.WALL_COLOR; break;
-                    case 2: tileColor = GameConstants.PATH_COLOR; break; // Type 2 nền như đường đi
-                    case 3: tileColor = GameConstants.PATH_COLOR; break; // Type 3 nền như đường đi
+                    case 2: tileColor = GameConstants.PATH_COLOR; break;
+                    case 3: tileColor = GameConstants.PATH_COLOR; break;
                     default: tileColor = Color.BLACK; break;
                 }
                 g2d.setColor(tileColor);
@@ -34,7 +34,6 @@ public class GameRenderer {
     }
 
     private static void drawScalableElement(Graphics2D g2d, ScalableMapElement element) {
-        // Chọn màu theo type
         Color elementColor;
         if (element.getType() == 2) {
             elementColor = GameConstants.SCALABLE_BLOCK_COLOR;
@@ -44,7 +43,6 @@ public class GameRenderer {
 
         g2d.setColor(elementColor);
 
-        // Tính vị trí và kích thước để vẽ
         double centerX = element.getX() + GameConstants.GRID_SIZE / 2.0;
         double centerY = element.getY() + GameConstants.GRID_SIZE / 2.0;
         double halfSize = element.getCurrentSize() / 2.0;
@@ -53,10 +51,8 @@ public class GameRenderer {
         int drawY = (int)(centerY - halfSize);
         int drawSize = (int)element.getCurrentSize();
 
-        // Vẽ hình vuông
         g2d.fillRect(drawX, drawY, drawSize, drawSize);
 
-        // Vẽ viền
         g2d.setColor(Color.BLACK);
         g2d.setStroke(new BasicStroke(1.0f));
         g2d.drawRect(drawX, drawY, drawSize, drawSize);

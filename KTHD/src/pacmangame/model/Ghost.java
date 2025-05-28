@@ -7,20 +7,14 @@ import java.util.List;
 import java.util.Random;
 
 public class Ghost {
-    // Vị trí đơn giản
     private double absoluteX, absoluteY;
-    private double targetX, targetY;
-    private boolean isMoving = false;
-    private boolean hasTarget = false;
 
-    // AI và di chuyển
+    // AI di chuyển theo thuật toán Pacman
     private int currentDirection = GameConstants.DIRECTION_NONE;
     private int previousDirection = GameConstants.DIRECTION_NONE;
     private Random random;
-    private int waitCounter = 0;
-    private int directionChangeDelay = 0;
+    private int directionChangeTimer = 0;
     private int stuckCounter = 0;
-    private int cornerEscapeCounter = 0;
 
     // Hitbox
     private final double COLLISION_WIDTH = GameConstants.GHOST_COLLISION_SIZE;
@@ -31,20 +25,19 @@ public class Ghost {
     private List<Point2D> transformedShape;
     private float[][] shapeTransformationMatrix;
 
-    // Biến dạng đơn giản theo hướng
+    // Biến dạng theo hướng
     private final float DEFORM_FACTOR = 1.3f;
 
     public Ghost(double startX, double startY) {
         this.absoluteX = startX;
         this.absoluteY = startY;
-        this.targetX = startX;
-        this.targetY = startY;
         this.random = new Random();
         this.currentDirection = random.nextInt(4);
+        this.directionChangeTimer = random.nextInt(60) + 30; // 30-90 frames
 
         initializeShape();
         initializeTransformationMatrix();
-        applyShapeTransformation();
+        applyDirectionalDeformation();
     }
 
     private void initializeShape() {
@@ -65,91 +58,32 @@ public class Ghost {
     }
 
     public void update(GameMap gameMap) {
-        if (waitCounter > 0) {
-            waitCounter--;
-            return;
-        }
+        directionChangeTimer--;
 
-        if (directionChangeDelay > 0) {
-            directionChangeDelay--;
-        }
-
-        // Áp dụng biến dạng theo hướng di chuyển
+        // Biến dạng theo hướng di chuyển
         applyDirectionalDeformation();
 
-        // Kiểm tra xem có bị kẹt ở góc không
-        if (isStuckInCorner(gameMap)) {
-            handleCornerEscape(gameMap);
-            return;
-        }
-
-        cornerEscapeCounter = 0;
-
-        // Thử di chuyển theo hướng hiện tại
+        // Logic di chuyển theo thuật toán Pacman
         if (currentDirection != GameConstants.DIRECTION_NONE) {
-            if (!moveInDirectionWithMatrix(currentDirection, gameMap)) {
-                stuckCounter++;
-                if (stuckCounter > 1) {
-                    chooseNewDirectionSmart(gameMap);
-                    stuckCounter = 0;
-                    directionChangeDelay = 3;
-                }
+            if (!moveWithMatrix(currentDirection, gameMap)) {
+                // Gặp tường - chọn hướng mới theo thuật toán
+                handleDirectionChange(gameMap);
             } else {
                 stuckCounter = 0;
             }
         } else {
-            chooseNewDirectionSmart(gameMap);
+            chooseInitialDirection(gameMap);
         }
 
-        // Thay đổi hướng ngẫu nhiên thỉnh thoảng
-        if (random.nextInt(300) == 0 && directionChangeDelay <= 0) {
-            chooseNewDirectionSmart(gameMap);
+        // Thay đổi hướng định kỳ (như thuật toán Pacman)
+        if (directionChangeTimer <= 0) {
+            considerDirectionChange(gameMap);
+            directionChangeTimer = random.nextInt(120) + 60; // 60-180 frames
         }
     }
 
-    private void applyDirectionalDeformation() {
-        // Reset về ma trận đơn vị
-        shapeTransformationMatrix = MatrixUtils.createIdentityMatrix();
-
-        // Áp dụng biến dạng theo hướng di chuyển
-        float[][] deformMatrix = MatrixUtils.createIdentityMatrix();
-
-        switch (currentDirection) {
-            case GameConstants.DIRECTION_UP:
-                // Lên: scale 1, DEFORM_FACTOR (kéo dài theo Y)
-                deformMatrix = MatrixUtils.createScaleMatrix(1.0f, DEFORM_FACTOR);
-                break;
-            case GameConstants.DIRECTION_DOWN:
-                // Xuống: scale 1, 1/DEFORM_FACTOR (nén theo Y)
-                deformMatrix = MatrixUtils.createScaleMatrix(1.0f, 1.0f / DEFORM_FACTOR);
-                break;
-            case GameConstants.DIRECTION_LEFT:
-                // Trái: scale 1/DEFORM_FACTOR, 1 (nén theo X)
-                deformMatrix = MatrixUtils.createScaleMatrix(1.0f / DEFORM_FACTOR, 1.0f);
-                break;
-            case GameConstants.DIRECTION_RIGHT:
-                // Phải: scale DEFORM_FACTOR, 1 (kéo dài theo X)
-                deformMatrix = MatrixUtils.createScaleMatrix(DEFORM_FACTOR, 1.0f);
-                break;
-            default:
-                // Không di chuyển, giữ nguyên
-                break;
-        }
-
-        // Áp dụng biến đổi quanh điểm cố định
-        if (currentDirection != GameConstants.DIRECTION_NONE) {
-            shapeTransformationMatrix = MatrixUtils.createTransformationAroundPoint(
-                    deformMatrix, (float)GameConstants.FIXED_POINT_X, (float)GameConstants.FIXED_POINT_Y);
-        }
-
-        applyShapeTransformation();
-    }
-
-    private void applyShapeTransformation() {
-        transformedShape = MatrixUtils.applyMatrixToShape(originalShape, shapeTransformationMatrix);
-    }
-
-    private boolean moveInDirectionWithMatrix(int direction, GameMap gameMap) {
+    // Di chuyển bằng ma trận tịnh tiến
+    private boolean moveWithMatrix(int direction, GameMap gameMap) {
         // Tính vector di chuyển
         float dx = 0, dy = 0;
         switch (direction) {
@@ -172,148 +106,87 @@ public class Ghost {
         // Tạo ma trận tịnh tiến
         float[][] translationMatrix = MatrixUtils.createTranslationMatrix(dx, dy);
 
-        // Tính vị trí mới bằng ma trận
+        // Áp dụng ma trận lên vị trí hiện tại
         Point2D currentPos = new Point2D(absoluteX, absoluteY);
         Point2D newPos = MatrixUtils.applyTransformation(currentPos, translationMatrix);
 
+        // Kiểm tra biên màn hình
+        if (newPos.x < 0 || newPos.y < 0 ||
+                newPos.x + GameConstants.PLAYER_SQUARE_SIZE > gameMap.getScreenWidth() ||
+                newPos.y + GameConstants.PLAYER_SQUARE_SIZE > gameMap.getScreenHeight()) {
+            return false;
+        }
+
+        // Kiểm tra va chạm
         double offsetX = (GameConstants.PLAYER_SQUARE_SIZE - COLLISION_WIDTH) / 2;
         double offsetY = (GameConstants.PLAYER_SQUARE_SIZE - COLLISION_HEIGHT) / 2;
 
         if (gameMap.isWalkableWithBounds(newPos.x + offsetX, newPos.y + offsetY,
                 COLLISION_WIDTH, COLLISION_HEIGHT)) {
-            // Áp dụng di chuyển
+            // Cập nhật vị trí bằng ma trận
             absoluteX = newPos.x;
             absoluteY = newPos.y;
             return true;
-        } else {
-            return trySlideMovementWithMatrix(dx, dy, direction, gameMap);
-        }
-    }
-
-    private boolean trySlideMovementWithMatrix(float mainDx, float mainDy, int direction, GameMap gameMap) {
-        double offsetX = (GameConstants.PLAYER_SQUARE_SIZE - COLLISION_WIDTH) / 2;
-        double offsetY = (GameConstants.PLAYER_SQUARE_SIZE - COLLISION_HEIGHT) / 2;
-
-        float[] slideDirections = {
-                (float)GameConstants.SLIDE_DISTANCE,
-                -(float)GameConstants.SLIDE_DISTANCE,
-                (float)(GameConstants.SLIDE_DISTANCE * 2),
-                -(float)(GameConstants.SLIDE_DISTANCE * 2)
-        };
-
-        for (float slideAmount : slideDirections) {
-            float slideDx = 0, slideDy = 0;
-
-            if (direction == GameConstants.DIRECTION_UP || direction == GameConstants.DIRECTION_DOWN) {
-                slideDx = slideAmount;
-            } else {
-                slideDy = slideAmount;
-            }
-
-            // Tạo ma trận tịnh tiến kết hợp
-            float[][] combinedMatrix = MatrixUtils.createTranslationMatrix(mainDx + slideDx, mainDy + slideDy);
-
-            // Tính vị trí test bằng ma trận
-            Point2D currentPos = new Point2D(absoluteX, absoluteY);
-            Point2D testPos = MatrixUtils.applyTransformation(currentPos, combinedMatrix);
-
-            if (gameMap.isWalkableWithBounds(testPos.x + offsetX, testPos.y + offsetY,
-                    COLLISION_WIDTH, COLLISION_HEIGHT)) {
-                absoluteX = testPos.x;
-                absoluteY = testPos.y;
-                return true;
-            }
         }
 
         return false;
     }
 
-    // Các phương thức AI khác giữ nguyên
-    private boolean isStuckInCorner(GameMap gameMap) {
+    // Xử lý thay đổi hướng khi gặp tường (theo thuật toán Pacman)
+    private void handleDirectionChange(GameMap gameMap) {
+        stuckCounter++;
+
+        if (stuckCounter > 1) {
+            List<Integer> availableDirections = getAvailableDirections(gameMap);
+
+            if (!availableDirections.isEmpty()) {
+                // Loại bỏ hướng ngược lại (quy tắc Pacman)
+                int oppositeDirection = getOppositeDirection(currentDirection);
+                availableDirections.removeIf(dir -> dir == oppositeDirection);
+
+                if (availableDirections.isEmpty()) {
+                    // Nếu chỉ có hướng ngược lại, chấp nhận
+                    currentDirection = oppositeDirection;
+                } else {
+                    // Chọn hướng ngẫu nhiên từ các hướng khả dụng
+                    currentDirection = availableDirections.get(random.nextInt(availableDirections.size()));
+                }
+
+                previousDirection = currentDirection;
+                stuckCounter = 0;
+            }
+        }
+    }
+
+    // Chọn hướng ban đầu
+    private void chooseInitialDirection(GameMap gameMap) {
         List<Integer> availableDirections = getAvailableDirections(gameMap);
 
-        if (availableDirections.size() <= 1) {
-            cornerEscapeCounter++;
-            return cornerEscapeCounter > 5;
+        if (!availableDirections.isEmpty()) {
+            currentDirection = availableDirections.get(random.nextInt(availableDirections.size()));
+            previousDirection = currentDirection;
         }
-
-        return false;
     }
 
-    private void handleCornerEscape(GameMap gameMap) {
-        List<Integer> allDirections = new ArrayList<>();
-        for (int i = 0; i < 4; i++) {
-            allDirections.add(i);
-        }
+    // Cân nhắc thay đổi hướng định kỳ
+    private void considerDirectionChange(GameMap gameMap) {
+        // 30% cơ hội thay đổi hướng (tạo tính ngẫu nhiên)
+        if (random.nextInt(100) < 30) {
+            List<Integer> availableDirections = getAvailableDirections(gameMap);
 
-        int oppositeDirection = (currentDirection + 2) % 4;
-        if (canMoveInDirection(oppositeDirection, gameMap)) {
-            currentDirection = oppositeDirection;
-            previousDirection = currentDirection;
-            cornerEscapeCounter = 0;
-            return;
-        }
+            if (availableDirections.size() > 1) {
+                // Loại bỏ hướng hiện tại để buộc thay đổi
+                availableDirections.removeIf(dir -> dir == currentDirection);
 
-        for (int dir : allDirections) {
-            if (dir != currentDirection && canMoveInDirection(dir, gameMap)) {
-                currentDirection = dir;
-                previousDirection = currentDirection;
-                cornerEscapeCounter = 0;
-                return;
+                if (!availableDirections.isEmpty()) {
+                    currentDirection = availableDirections.get(random.nextInt(availableDirections.size()));
+                    previousDirection = currentDirection;
+                }
             }
         }
-
-        forceRandomMovementWithMatrix(gameMap);
     }
 
-    private void forceRandomMovementWithMatrix(GameMap gameMap) {
-        float randomDx = (float)((random.nextDouble() - 0.5) * 2);
-        float randomDy = (float)((random.nextDouble() - 0.5) * 2);
-
-        float[][] randomMatrix = MatrixUtils.createTranslationMatrix(randomDx, randomDy);
-        Point2D currentPos = new Point2D(absoluteX, absoluteY);
-        Point2D testPos = MatrixUtils.applyTransformation(currentPos, randomMatrix);
-
-        double offsetX = (GameConstants.PLAYER_SQUARE_SIZE - COLLISION_WIDTH) / 2;
-        double offsetY = (GameConstants.PLAYER_SQUARE_SIZE - COLLISION_HEIGHT) / 2;
-
-        if (gameMap.isWalkableWithBounds(testPos.x + offsetX, testPos.y + offsetY,
-                COLLISION_WIDTH, COLLISION_HEIGHT)) {
-            absoluteX = testPos.x;
-            absoluteY = testPos.y;
-            cornerEscapeCounter = 0;
-            waitCounter = 10;
-        }
-    }
-
-    private boolean canMoveInDirection(int direction, GameMap gameMap) {
-        float dx = 0, dy = 0;
-        switch (direction) {
-            case GameConstants.DIRECTION_UP:
-                dy = -(float)GameConstants.GHOST_SPEED;
-                break;
-            case GameConstants.DIRECTION_DOWN:
-                dy = (float)GameConstants.GHOST_SPEED;
-                break;
-            case GameConstants.DIRECTION_LEFT:
-                dx = -(float)GameConstants.GHOST_SPEED;
-                break;
-            case GameConstants.DIRECTION_RIGHT:
-                dx = (float)GameConstants.GHOST_SPEED;
-                break;
-        }
-
-        float[][] translationMatrix = MatrixUtils.createTranslationMatrix(dx, dy);
-        Point2D currentPos = new Point2D(absoluteX, absoluteY);
-        Point2D testPos = MatrixUtils.applyTransformation(currentPos, translationMatrix);
-
-        double offsetX = (GameConstants.PLAYER_SQUARE_SIZE - COLLISION_WIDTH) / 2;
-        double offsetY = (GameConstants.PLAYER_SQUARE_SIZE - COLLISION_HEIGHT) / 2;
-
-        return gameMap.isWalkableWithBounds(testPos.x + offsetX, testPos.y + offsetY,
-                COLLISION_WIDTH, COLLISION_HEIGHT);
-    }
-
+    // Lấy danh sách hướng có thể di chuyển
     private List<Integer> getAvailableDirections(GameMap gameMap) {
         List<Integer> availableDirections = new ArrayList<>();
 
@@ -326,30 +199,107 @@ public class Ghost {
         return availableDirections;
     }
 
-    private void chooseNewDirectionSmart(GameMap gameMap) {
-        List<Integer> availableDirections = getAvailableDirections(gameMap);
+    // Kiểm tra có thể di chuyển theo hướng không
+    private boolean canMoveInDirection(int direction, GameMap gameMap) {
+        float dx = 0, dy = 0;
+        switch (direction) {
+            case GameConstants.DIRECTION_UP:
+                dy = -(float)GameConstants.GHOST_SPEED * 2; // Test xa hơn
+                break;
+            case GameConstants.DIRECTION_DOWN:
+                dy = (float)GameConstants.GHOST_SPEED * 2;
+                break;
+            case GameConstants.DIRECTION_LEFT:
+                dx = -(float)GameConstants.GHOST_SPEED * 2;
+                break;
+            case GameConstants.DIRECTION_RIGHT:
+                dx = (float)GameConstants.GHOST_SPEED * 2;
+                break;
+        }
 
-        if (availableDirections.isEmpty()) {
-            handleCornerEscape(gameMap);
+        // Sử dụng ma trận để test
+        float[][] testMatrix = MatrixUtils.createTranslationMatrix(dx, dy);
+        Point2D currentPos = new Point2D(absoluteX, absoluteY);
+        Point2D testPos = MatrixUtils.applyTransformation(currentPos, testMatrix);
+
+        // Kiểm tra biên
+        if (testPos.x < 0 || testPos.y < 0 ||
+                testPos.x + GameConstants.PLAYER_SQUARE_SIZE > gameMap.getScreenWidth() ||
+                testPos.y + GameConstants.PLAYER_SQUARE_SIZE > gameMap.getScreenHeight()) {
+            return false;
+        }
+
+        double offsetX = (GameConstants.PLAYER_SQUARE_SIZE - COLLISION_WIDTH) / 2;
+        double offsetY = (GameConstants.PLAYER_SQUARE_SIZE - COLLISION_HEIGHT) / 2;
+
+        return gameMap.isWalkableWithBounds(testPos.x + offsetX, testPos.y + offsetY,
+                COLLISION_WIDTH, COLLISION_HEIGHT);
+    }
+
+    private int getOppositeDirection(int direction) {
+        switch (direction) {
+            case GameConstants.DIRECTION_UP: return GameConstants.DIRECTION_DOWN;
+            case GameConstants.DIRECTION_DOWN: return GameConstants.DIRECTION_UP;
+            case GameConstants.DIRECTION_LEFT: return GameConstants.DIRECTION_RIGHT;
+            case GameConstants.DIRECTION_RIGHT: return GameConstants.DIRECTION_LEFT;
+            default: return GameConstants.DIRECTION_NONE;
+        }
+    }
+
+    // Biến dạng theo hướng di chuyển
+    private void applyDirectionalDeformation() {
+        shapeTransformationMatrix = MatrixUtils.createIdentityMatrix();
+
+        if (currentDirection == GameConstants.DIRECTION_NONE) {
+            applyShapeTransformation();
             return;
         }
 
-        List<Integer> preferredDirections = new ArrayList<>();
-        int oppositeDirection = (previousDirection + 2) % 4;
+        float[][] deformMatrix;
 
-        for (int dir : availableDirections) {
-            if (dir != oppositeDirection) {
-                preferredDirections.add(dir);
-            }
+        switch (currentDirection) {
+            case GameConstants.DIRECTION_UP:
+                deformMatrix = MatrixUtils.createScaleMatrix(1.0f, DEFORM_FACTOR);
+                break;
+            case GameConstants.DIRECTION_DOWN:
+                deformMatrix = MatrixUtils.createScaleMatrix(1.0f, 1.0f / DEFORM_FACTOR);
+                break;
+            case GameConstants.DIRECTION_LEFT:
+                deformMatrix = MatrixUtils.createScaleMatrix(1.0f / DEFORM_FACTOR, 1.0f);
+                break;
+            case GameConstants.DIRECTION_RIGHT:
+                deformMatrix = MatrixUtils.createScaleMatrix(DEFORM_FACTOR, 1.0f);
+                break;
+            default:
+                deformMatrix = MatrixUtils.createIdentityMatrix();
+                break;
         }
 
-        if (!preferredDirections.isEmpty()) {
-            currentDirection = preferredDirections.get(random.nextInt(preferredDirections.size()));
-        } else {
-            currentDirection = availableDirections.get(random.nextInt(availableDirections.size()));
-        }
+        // Áp dụng biến đổi quanh điểm cố định
+        shapeTransformationMatrix = MatrixUtils.createTransformationAroundPoint(
+                deformMatrix, (float)GameConstants.FIXED_POINT_X, (float)GameConstants.FIXED_POINT_Y);
 
-        previousDirection = currentDirection;
+        applyShapeTransformation();
+    }
+
+    private void applyShapeTransformation() {
+        transformedShape = MatrixUtils.applyMatrixToShape(originalShape, shapeTransformationMatrix);
+    }
+
+    public boolean checkCollisionWithPlayer(Player player) {
+        double ghostCenterX = absoluteX + GameConstants.PLAYER_SQUARE_SIZE / 2;
+        double ghostCenterY = absoluteY + GameConstants.PLAYER_SQUARE_SIZE / 2;
+
+        double playerCenterX = player.getX() + GameConstants.PLAYER_SQUARE_SIZE / 2;
+        double playerCenterY = player.getY() + GameConstants.PLAYER_SQUARE_SIZE / 2;
+
+        double distance = Math.sqrt(
+                Math.pow(ghostCenterX - playerCenterX, 2) +
+                        Math.pow(ghostCenterY - playerCenterY, 2)
+        );
+
+        double collisionDistance = (GameConstants.PLAYER_SQUARE_SIZE + GameConstants.PLAYER_SQUARE_SIZE) / 2 * 0.8;
+        return distance < collisionDistance;
     }
 
     public double getX() { return absoluteX; }

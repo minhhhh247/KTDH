@@ -6,26 +6,21 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Player {
-    // Vị trí đơn giản
     private double absoluteX, absoluteY;
     private double targetX, targetY;
     private boolean isMoving = false;
     private boolean hasTarget = false;
-    private boolean isStopped = false; // Thêm trạng thái dừng
+    private boolean isStopped = false;
 
-    // Hướng di chuyển liên tục
     private int currentDirection = GameConstants.DIRECTION_NONE;
     private int requestedDirection = GameConstants.DIRECTION_NONE;
 
-    // Hitbox
     private final double COLLISION_WIDTH = GameConstants.PLAYER_COLLISION_SIZE;
     private final double COLLISION_HEIGHT = GameConstants.PLAYER_COLLISION_SIZE;
 
-    // Ma trận biến đổi cho hình dạng
     private double currentScaleFactor = 1.0;
     private float[][] shapeTransformationMatrix;
 
-    // Hình dạng gốc và đã biến đổi
     private List<Point2D> originalShape;
     private List<Point2D> transformedShape;
 
@@ -59,19 +54,15 @@ public class Player {
     }
 
     public void update(GameMap gameMap) {
-        // Nếu bị dừng, không di chuyển
         if (isStopped) return;
 
-        // Xử lý di chuyển liên tục
         handleContinuousMovement(gameMap);
 
-        // Xử lý di chuyển đến target (nếu có)
         if (hasTarget) {
             moveToTarget();
         }
     }
 
-    // Phương thức dừng nhân vật khi va chạm với quái
     public void stopMoving() {
         isStopped = true;
         isMoving = false;
@@ -80,36 +71,29 @@ public class Player {
         currentDirection = GameConstants.DIRECTION_NONE;
     }
 
-    // Kiểm tra va chạm với quái
     public boolean checkCollisionWithGhost(Ghost ghost) {
-        // Tính tâm của player
         double playerCenterX = absoluteX + GameConstants.PLAYER_SQUARE_SIZE / 2;
         double playerCenterY = absoluteY + GameConstants.PLAYER_SQUARE_SIZE / 2;
 
-        // Tính tâm của ghost
         double ghostCenterX = ghost.getX() + GameConstants.PLAYER_SQUARE_SIZE / 2;
         double ghostCenterY = ghost.getY() + GameConstants.PLAYER_SQUARE_SIZE / 2;
 
-        // Tính khoảng cách giữa hai tâm
         double distance = Math.sqrt(
                 Math.pow(playerCenterX - ghostCenterX, 2) +
                         Math.pow(playerCenterY - ghostCenterY, 2)
         );
 
-        // Va chạm nếu khoảng cách nhỏ hơn tổng bán kính
         double collisionDistance = (GameConstants.PLAYER_SQUARE_SIZE + GameConstants.PLAYER_SQUARE_SIZE) / 2 * 0.8;
         return distance < collisionDistance;
     }
 
     private void handleContinuousMovement(GameMap gameMap) {
-        // Nếu có hướng được yêu cầu, di chuyển theo hướng đó
         if (requestedDirection != GameConstants.DIRECTION_NONE) {
             moveInDirectionWithMatrix(requestedDirection, gameMap);
         }
     }
 
     private void moveInDirectionWithMatrix(int direction, GameMap gameMap) {
-        // Tính vector di chuyển
         float dx = 0, dy = 0;
         switch (direction) {
             case GameConstants.DIRECTION_UP:
@@ -128,69 +112,22 @@ public class Player {
                 return;
         }
 
-        // Tạo ma trận tịnh tiến
         float[][] translationMatrix = MatrixUtils.createTranslationMatrix(dx, dy);
-
-        // Tính vị trí mới bằng ma trận
         Point2D currentPos = new Point2D(absoluteX, absoluteY);
         Point2D newPos = MatrixUtils.applyTransformation(currentPos, translationMatrix);
 
-        // Tính offset cho collision
         double offsetX = (GameConstants.PLAYER_SQUARE_SIZE - COLLISION_WIDTH) / 2;
         double offsetY = (GameConstants.PLAYER_SQUARE_SIZE - COLLISION_HEIGHT) / 2;
 
-        // Kiểm tra va chạm
         if (gameMap.isWalkableWithBounds(newPos.x + offsetX, newPos.y + offsetY,
                 COLLISION_WIDTH, COLLISION_HEIGHT)) {
-            // Áp dụng di chuyển
             absoluteX = newPos.x;
             absoluteY = newPos.y;
-        } else {
-            // Thử trôi
-            trySlideMovementWithMatrix(dx, dy, direction, gameMap);
         }
     }
 
-    private void trySlideMovementWithMatrix(float mainDx, float mainDy, int direction, GameMap gameMap) {
-        double offsetX = (GameConstants.PLAYER_SQUARE_SIZE - COLLISION_WIDTH) / 2;
-        double offsetY = (GameConstants.PLAYER_SQUARE_SIZE - COLLISION_HEIGHT) / 2;
-
-        float[] slideDirections = {
-                (float)GameConstants.SLIDE_DISTANCE,
-                -(float)GameConstants.SLIDE_DISTANCE,
-                (float)(GameConstants.SLIDE_DISTANCE * 2),
-                -(float)(GameConstants.SLIDE_DISTANCE * 2)
-        };
-
-        for (float slideAmount : slideDirections) {
-            float slideDx = 0, slideDy = 0;
-
-            if (direction == GameConstants.DIRECTION_UP || direction == GameConstants.DIRECTION_DOWN) {
-                slideDx = slideAmount;
-            } else {
-                slideDy = slideAmount;
-            }
-
-            // Tạo ma trận tịnh tiến kết hợp
-            float[][] combinedMatrix = MatrixUtils.createTranslationMatrix(mainDx + slideDx, mainDy + slideDy);
-
-            // Tính vị trí test bằng ma trận
-            Point2D currentPos = new Point2D(absoluteX, absoluteY);
-            Point2D testPos = MatrixUtils.applyTransformation(currentPos, combinedMatrix);
-
-            if (gameMap.isWalkableWithBounds(testPos.x + offsetX, testPos.y + offsetY,
-                    COLLISION_WIDTH, COLLISION_HEIGHT)) {
-                // Áp dụng di chuyển kết hợp
-                absoluteX = testPos.x;
-                absoluteY = testPos.y;
-                return;
-            }
-        }
-    }
-
-    // Phương thức điều khiển
     public void setRequestedDirection(int direction) {
-        if (!isStopped) { // Chỉ cho phép điều khiển khi chưa bị dừng
+        if (!isStopped) {
             this.requestedDirection = direction;
             this.currentDirection = direction;
         }
@@ -200,9 +137,8 @@ public class Player {
         this.requestedDirection = GameConstants.DIRECTION_NONE;
     }
 
-    // Di chuyển đến một điểm cụ thể
     public void moveToPoint(double targetX, double targetY, GameMap gameMap) {
-        if (isStopped) return; // Không cho phép di chuyển khi bị dừng
+        if (isStopped) return;
 
         double offsetX = (GameConstants.PLAYER_SQUARE_SIZE - COLLISION_WIDTH) / 2;
         double offsetY = (GameConstants.PLAYER_SQUARE_SIZE - COLLISION_HEIGHT) / 2;
@@ -240,7 +176,6 @@ public class Player {
         }
     }
 
-    // Phương thức biến đổi hình dạng
     public boolean scaleUp() {
         if (currentScaleFactor * 2.0 <= GameConstants.MAX_SCALE_FACTOR) {
             applyShapeScale(2.0f);
@@ -286,7 +221,6 @@ public class Player {
         transformedShape = MatrixUtils.applyMatrixToShape(originalShape, shapeTransformationMatrix);
     }
 
-    // Getters
     public double getX() { return absoluteX; }
     public double getY() { return absoluteY; }
     public boolean isMoving() { return isMoving || requestedDirection != GameConstants.DIRECTION_NONE; }

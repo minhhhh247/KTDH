@@ -17,9 +17,9 @@ public class GameMap {
             {1, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 1},
             {1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1},
             {1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1},
-            {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 2, 3, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}, // Thêm type 2 và 3
+            {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 2, 3, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},
             {1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1},
-            {1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 2, 3, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1}, // Thêm type 2 và 3
+            {1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 2, 3, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1},
             {1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1},
             {1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1},
             {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
@@ -44,7 +44,6 @@ public class GameMap {
     private void initializeScalableElements() {
         scalableElements = new ArrayList<>();
 
-        // Tìm và tạo các thành phần scalable (type 2 và 3)
         for (int row = 0; row < rows; row++) {
             for (int col = 0; col < cols; col++) {
                 int tileType = map[row][col];
@@ -69,21 +68,29 @@ public class GameMap {
         }
     }
 
+    // THÊM phương thức thiếu
+    public ScalableMapElement getScalableElementAtPosition(double x, double y) {
+        for (ScalableMapElement element : scalableElements) {
+            if (x >= element.getX() && x < element.getX() + GameConstants.GRID_SIZE &&
+                    y >= element.getY() && y < element.getY() + GameConstants.GRID_SIZE) {
+                return element;
+            }
+        }
+        return null;
+    }
+
     public int getTile(int row, int col) {
         if (row >= 0 && row < rows && col >= 0 && col < cols) {
             return map[row][col];
         }
-        return 1; // Tường nếu ra ngoài biên
+        return 1;
     }
 
-    // Kiểm tra va chạm có tính đến scalable elements
     public boolean isWalkableWithBounds(double x, double y, double width, double height) {
-        // Kiểm tra va chạm với map tĩnh
         if (!isWalkableWithBoundsStatic(x, y, width, height)) {
             return false;
         }
 
-        // Kiểm tra va chạm với scalable elements
         for (ScalableMapElement element : scalableElements) {
             if (element.checkCollision(x, y, width, height)) {
                 return false;
@@ -118,7 +125,6 @@ public class GameMap {
         int row = (int) (y / GameConstants.GRID_SIZE);
         int tileType = getTile(row, col);
 
-        // Type 0, 2 có thể đi qua; Type 1, 3 có thể chặn (tùy thuộc vào kích thước)
         return tileType != 1;
     }
 
